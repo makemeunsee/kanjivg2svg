@@ -7,7 +7,7 @@ require 'rubygems'
 require 'nokogiri'
 require 'pp'
 
-class Importer
+class Importerr
   class KanjiVG
 
     WIDTH = 109 # 109 per character
@@ -20,7 +20,7 @@ class Importer
     LINE_STYLE = 'stroke:#ddd;stroke-width:2'
     DASHED_LINE_STYLE = 'stroke:#ddd;stroke-width:2;stroke-dasharray:3 3'
     ENTRY_NAME = 'svg'
-    COORD_RE = %r{(?ix:\d+ (?:\.\d+)?)}
+    COORD_RE = %r{(?ix:-?\d+ (?:\.\d+)?)}
 
     def initialize(doc, output_dir, type = :numbers)
       @output_dir = output_dir
@@ -37,6 +37,7 @@ class Importer
             tmp << line
             noko = Nokogiri::XML(tmp)
             parse(noko)
+            puts "parsed #{doc.path}"
           else
             tmp << line
           end
@@ -51,13 +52,13 @@ class Importer
     def parse(doc)
       codepoint = nil
       entry = doc.css('g')[1]
-      if entry['kvg:element'].nil?
-        codepoint = entry['id'].split(':')[1].to_i(16) # get it from the id="kvg:0abcd"
+      if entry['id'].nil?
+        codepoint = entry['kvg:element'].codepoints.first.rjust(5, "0")
       else
-        codepoint = entry['kvg:element'].codepoints.first
+        codepoint = entry['id'].split(':')[1].rjust(5, "0") # get it from the id="kvg:0abcd"
       end
 
-      svg = File.open("#{@output_dir}/#{codepoint}_#{@type}.svg", File::RDWR|File::TRUNC|File::CREAT)
+      svg = File.open("#{@output_dir}/#{codepoint.to_i(16)}_#{@type}.svg", File::RDWR|File::TRUNC|File::CREAT)
       stroke_count = 0
       stroke_total = entry.css('path[d]').length
       paths = []
@@ -109,17 +110,17 @@ class Importer
           svg << "<text x=\"#{x}\" y=\"#{y}\" style=\"#{TEXT_STYLE}\">#{stroke_count}</text>\n"
           svg << "<path d=\"#{stroke['d']}\" style=\"#{PATH_STYLE}\" />\n"
         when :frames
-          md = %r{^[LMT] \s* (#{COORD_RE}) , (#{COORD_RE})}ix.match(paths.last)
+          md = %r{^[LMT] \s* (#{COORD_RE}) [,\s] (#{COORD_RE})}ix.match(paths.last)
           path_start_x = md[1].to_f
           path_start_y = md[2].to_f
           path_start_x += WIDTH * (stroke_count - 1)
-
+          
           paths.each_with_index do |path, i|
             last = ((stroke_count - 1) == i)
             delta = last ? WIDTH * (stroke_count - 1) : WIDTH
 
             # Move strokes relative to the frame
-            path.gsub!(%r{([LMTm]) (#{COORD_RE})}x) do |m|
+            path.gsub!(%r{([LMTm])\s*(#{COORD_RE})}x) do |m|
               letter = $1
               x  = $2.to_f
               x += delta
@@ -187,7 +188,7 @@ puts "Starting the conversion @ #{Time.now} ..."
 
 Dir["#{input_dir}*.svg"].each do |file|
   begin
-    Importer::KanjiVG.new(File.open(file), output_dir, type.to_sym)
+    Importerr::KanjiVG.new(File.open(file), output_dir, type.to_sym)
   rescue => e
     puts "Failed to process file: #{file}"
     puts "\t" << e.message
