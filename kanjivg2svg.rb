@@ -52,13 +52,15 @@ class Importerr
     def parse(doc)
       codepoint = nil
       entry = doc.css('g')[1]
-      if entry['id'].nil?
-        codepoint = entry['kvg:element'].codepoints.first.rjust(5, "0")
+      truecodepoint = entry['id'].split(':')[1].rjust(5, "0")
+      if entry['kvg:element'].nil?
+        codepoint = entry['id'].split(':')[1].to_i(16) # get it from the id="kvg:0abcd"
       else
-        codepoint = entry['id'].split(':')[1].rjust(5, "0") # get it from the id="kvg:0abcd"
+        codepoint = entry['kvg:element'].codepoints.first
       end
 
-      svg = File.open("#{@output_dir}/#{codepoint.to_i(16)}_#{@type}.svg", File::RDWR|File::TRUNC|File::CREAT)
+      svg = File.open("#{@output_dir}/#{codepoint}_#{@type}.svg", File::RDWR|File::TRUNC|File::CREAT)
+      svg << "<!-- #{truecodepoint} -->\n"
       stroke_count = 0
       stroke_total = entry.css('path[d]').length
       paths = []
@@ -110,7 +112,7 @@ class Importerr
           svg << "<text x=\"#{x}\" y=\"#{y}\" style=\"#{TEXT_STYLE}\">#{stroke_count}</text>\n"
           svg << "<path d=\"#{stroke['d']}\" style=\"#{PATH_STYLE}\" />\n"
         when :frames
-          md = %r{^[LMT] \s* (#{COORD_RE}) [,\s] (#{COORD_RE})}ix.match(paths.last)
+          md = %r{^[LMT] \s* (#{COORD_RE})[,\s]\s*(#{COORD_RE})}ix.match(paths.last)
           path_start_x = md[1].to_f
           path_start_y = md[2].to_f
           path_start_x += WIDTH * (stroke_count - 1)
@@ -120,13 +122,15 @@ class Importerr
             delta = last ? WIDTH * (stroke_count - 1) : WIDTH
 
             # Move strokes relative to the frame
+            # TODO LMT params are (x y)+, not (x y){1}
             path.gsub!(%r{([LMTm])\s*(#{COORD_RE})}x) do |m|
               letter = $1
               x  = $2.to_f
               x += delta
               "#{letter}#{x}"
             end
-            path.gsub!(%r{(S) (#{COORD_RE}) , (#{COORD_RE}) , (#{COORD_RE})}x) do |m|
+            # TODO S params are (x2 y2 x y)+, not (x2 y2 x y){1}
+            path.gsub!(%r{(S)\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})}x) do |m|
               letter = $1
               x1  = $2.to_f
               x1 += delta
@@ -134,7 +138,8 @@ class Importerr
               x2 += delta
               "#{letter}#{x1},#{$3},#{x2}"
             end
-            path.gsub!(%r{(C) (#{COORD_RE}) , (#{COORD_RE}) , (#{COORD_RE}) , (#{COORD_RE}) , (#{COORD_RE})}x) do |m|
+            # TODO C params are (x1 y1 x2 y2 x y)+, not (x1 y1 x2 y2 x y){1}
+            path.gsub!(%r{(C)\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})}x) do |m|
               letter  = $1
               x1  = $2.to_f
               x1 += delta
@@ -144,6 +149,7 @@ class Importerr
               x3 += delta
               "#{letter}#{x1},#{$3},#{x2},#{$5},#{x3}"
             end
+            # TODO detect unsupported cases
 
             svg << "<path d=\"#{path}\" style=\"#{last ? PATH_STYLE : INACTIVE_PATH_STYLE}\" />\n"
           end
