@@ -116,7 +116,22 @@ class Importerr
           path_start_x = md[1].to_f
           path_start_y = md[2].to_f
           path_start_x += WIDTH * (stroke_count - 1)
-          
+         
+          # detect unsupported cases
+	  last_path = paths.last
+          if last_path.match?(".*[HVQAZ].*")
+            puts "unsupported path element [HVQAZ] in #{last_path} of #{truecodepoint}"
+	  end
+	  if last_path.match?(".*C\s*((#{COORD_RE})[,\s]\s*){7,}.*")
+            puts "unsupported path element, chained C in #{last_path} of #{truecodepoint}"
+	  end
+          if last_path.match?(".*S\s*((#{COORD_RE})[,\s]\s*){5,}.*")
+            puts "unsupported path element, chained S in #{last_path} of #{truecodepoint}"
+	  end
+          if last_path.match?(".*[LMTm]\s*((#{COORD_RE})[,\s]\s*){5,}.*")
+            puts "unsupported path element, chained [LMTm] in #{last_path} of #{truecodepoint}"
+	  end
+
           paths.each_with_index do |path, i|
             last = ((stroke_count - 1) == i)
             delta = last ? WIDTH * (stroke_count - 1) : WIDTH
@@ -130,16 +145,16 @@ class Importerr
               "#{letter}#{x}"
             end
             # TODO S params are (x2 y2 x y)+, not (x2 y2 x y){1}
-            path.gsub!(%r{(S)\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})}x) do |m|
+            path.gsub!(%r{(S)\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE}[,\s]\s*(#{COORD_RE})\s*)}x) do |m|
               letter = $1
               x1  = $2.to_f
               x1 += delta
               x2  = $4.to_f
               x2 += delta
-              "#{letter}#{x1},#{$3},#{x2}"
+              "#{letter}#{x1},#{$3} #{x2},#{$5} "
             end
             # TODO C params are (x1 y1 x2 y2 x y)+, not (x1 y1 x2 y2 x y){1}
-            path.gsub!(%r{(C)\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})}x) do |m|
+            path.gsub!(%r{(C)\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})\s*}x) do |m|
               letter  = $1
               x1  = $2.to_f
               x1 += delta
@@ -147,11 +162,10 @@ class Importerr
               x2 += delta
               x3  = $6.to_f
               x3 += delta
-              "#{letter}#{x1},#{$3},#{x2},#{$5},#{x3}"
+              "#{letter}#{x1},#{$3} #{x2},#{$5} #{x3},#{$7} "
             end
-            # TODO detect unsupported cases
 
-            svg << "<path d=\"#{path}\" style=\"#{last ? PATH_STYLE : INACTIVE_PATH_STYLE}\" />\n"
+	    svg << "<path d=\"#{path}\" style=\"#{last ? PATH_STYLE : INACTIVE_PATH_STYLE}\" />\n"
           end
 
           # Put a circle at the stroke start
