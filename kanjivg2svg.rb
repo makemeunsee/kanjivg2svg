@@ -21,6 +21,7 @@ class Importerr
     DASHED_LINE_STYLE = 'stroke:#ddd;stroke-width:2;stroke-dasharray:3 3'
     ENTRY_NAME = 'svg'
     COORD_RE = %r{(?ix:-?\d+ (?:\.\d+)?)}
+    SEP = %r{\s*[,\s]\s*}
 
     def initialize(doc, output_dir, type = :numbers)
       @output_dir = output_dir
@@ -112,60 +113,54 @@ class Importerr
           svg << "<text x=\"#{x}\" y=\"#{y}\" style=\"#{TEXT_STYLE}\">#{stroke_count}</text>\n"
           svg << "<path d=\"#{stroke['d']}\" style=\"#{PATH_STYLE}\" />\n"
         when :frames
-          md = %r{^[LMT] \s* (#{COORD_RE})[,\s]\s*(#{COORD_RE})}ix.match(paths.last)
+          md = %r{^[LMT] \s* (#{COORD_RE})#{SEP}(#{COORD_RE})}ix.match(paths.last)
           path_start_x = md[1].to_f
           path_start_y = md[2].to_f
           path_start_x += WIDTH * (stroke_count - 1)
-         
+          
           # detect unsupported cases
-	  last_path = paths.last
+          last_path = paths.last
           if last_path.match?(".*[HVQAZ].*")
             puts "unsupported path element [HVQAZ] in #{last_path} of #{truecodepoint}"
-	  end
-	  if last_path.match?(".*C\s*((#{COORD_RE})[,\s]\s*){7,}.*")
-            puts "unsupported path element, chained C in #{last_path} of #{truecodepoint}"
-	  end
-          if last_path.match?(".*S\s*((#{COORD_RE})[,\s]\s*){5,}.*")
-            puts "unsupported path element, chained S in #{last_path} of #{truecodepoint}"
-	  end
-          if last_path.match?(".*[LMTm]\s*((#{COORD_RE})[,\s]\s*){5,}.*")
-            puts "unsupported path element, chained [LMTm] in #{last_path} of #{truecodepoint}"
-	  end
-
+          end
+          
           paths.each_with_index do |path, i|
             last = ((stroke_count - 1) == i)
             delta = last ? WIDTH * (stroke_count - 1) : WIDTH
 
             # Move strokes relative to the frame
-            # TODO LMT params are (x y)+, not (x y){1}
-            path.gsub!(%r{([LMTm])\s*(#{COORD_RE})}x) do |m|
-              letter = $1
-              x  = $2.to_f
-              x += delta
-              "#{letter}#{x}"
+            two_coords = %r{(#{COORD_RE})#{SEP}(#{COORD_RE})}
+            path.gsub!(%r{[LMTm]\s*#{two_coords}(?:#{SEP}#{two_coords})*}x) do |m|
+              m.gsub!(two_coords) do |coords|
+                x  = $1.to_f
+                x += delta
+                "#{x},#{$2}"
+              end
             end
-            # TODO S params are (x2 y2 x y)+, not (x2 y2 x y){1}
-            path.gsub!(%r{(S)\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE}[,\s]\s*(#{COORD_RE})\s*)}x) do |m|
-              letter = $1
-              x1  = $2.to_f
-              x1 += delta
-              x2  = $4.to_f
-              x2 += delta
-              "#{letter}#{x1},#{$3} #{x2},#{$5} "
+            four_coords = %r{(#{COORD_RE})#{SEP}(#{COORD_RE})#{SEP}(#{COORD_RE})#{SEP}(#{COORD_RE})}
+            path.gsub!(%r{S\s*#{four_coords}(?:#{SEP}#{four_coords})*}x) do |m|
+              m.gsub!(four_coords) do |coords|
+                x1  = $1.to_f
+                x1 += delta
+                x2  = $3.to_f
+                x2 += delta
+                "#{x1},#{$2} #{x2},#{$4}"
+              end
             end
-            # TODO C params are (x1 y1 x2 y2 x y)+, not (x1 y1 x2 y2 x y){1}
-            path.gsub!(%r{(C)\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})[,\s]\s*(#{COORD_RE})\s*}x) do |m|
-              letter  = $1
-              x1  = $2.to_f
-              x1 += delta
-              x2  = $4.to_f
-              x2 += delta
-              x3  = $6.to_f
-              x3 += delta
-              "#{letter}#{x1},#{$3} #{x2},#{$5} #{x3},#{$7} "
+            six_coords = %r{(#{COORD_RE})#{SEP}(#{COORD_RE})#{SEP}(#{COORD_RE})#{SEP}(#{COORD_RE})#{SEP}(#{COORD_RE})#{SEP}(#{COORD_RE})}
+            path.gsub!(%r{C\s*#{six_coords}(?:#{SEP}#{six_coords})*}x) do |m|
+              m.gsub!(six_coords) do |coords|
+                x1  = $1.to_f
+                x1 += delta
+                x2  = $3.to_f
+                x2 += delta
+                x3  = $5.to_f
+                x3 += delta
+                "#{x1},#{$2} #{x2},#{$4} #{x3},#{$6}"
+              end
             end
 
-	    svg << "<path d=\"#{path}\" style=\"#{last ? PATH_STYLE : INACTIVE_PATH_STYLE}\" />\n"
+            svg << "<path d=\"#{path}\" style=\"#{last ? PATH_STYLE : INACTIVE_PATH_STYLE}\" />\n"
           end
 
           # Put a circle at the stroke start
